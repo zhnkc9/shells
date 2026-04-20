@@ -336,6 +336,7 @@ show_summary() {
 
   echo
   log "如需查看完整配置，可执行: cat $CONFIG_PATH"
+  cat $CONFIG_PATH
 }
 
 main() {
