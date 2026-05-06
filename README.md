@@ -11,5 +11,3 @@ Shadowsocks 安装脚本。
 ```bash
 curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/shadowsocks.sh -o shadowsocks.sh && chmod +x shadowsocks.sh && ./shadowsocks.sh
 ```
-
-gno.z.u5iCVQbuxzfau3a;XWHhtzNcgV.94Kjtfb3:PQLu7hHn
