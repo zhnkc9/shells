@@ -11,3 +11,10 @@ Shadowsocks 安装脚本。
 ```bash
 curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/shadowsocks.sh -o shadowsocks.sh && chmod +x shadowsocks.sh && ./shadowsocks.sh
 ```
+
+
+## bbr
+
+```bash
+curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/bbr.sh -o bbr.sh && chmod +x bbr.sh && ./bbr.sh
+```
