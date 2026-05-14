@@ -5,8 +5,9 @@ set -Eeuo pipefail
 SCRIPT_NAME="$(basename "$0")"
 CONFIG_PATH="/etc/danted.conf"
 DEFAULT_PORT="1080"
+DEFAULT_USER="socksuser"
 
-SOCKS_USER=""
+SOCKS_USER="$DEFAULT_USER"
 SOCKS_PASSWORD=""
 PORT="$DEFAULT_PORT"
 EXTERNAL_IFACE=""
@@ -26,24 +27,24 @@ die() {
 
 usage() {
   cat <<EOF
-Usage: sudo bash $SCRIPT_NAME --user <username> --password <password> [options]
+Usage: sudo bash $SCRIPT_NAME --password <password> [options]
 
 Options:
-  --user <username>       SOCKS5 认证用户名，必填
+  --user <username>       SOCKS5 认证用户名，默认: $DEFAULT_USER
   --password <password>   SOCKS5 认证密码，必填
   --port <port>           SOCKS5 监听端口，默认: $DEFAULT_PORT
   --external <iface>      出口网卡；默认自动检测
   -h, --help              显示帮助
 
 示例:
-  sudo bash $SCRIPT_NAME --user socksuser --password 'your-password'
+  sudo bash $SCRIPT_NAME --password 'your-password'
   sudo bash $SCRIPT_NAME --user socksuser --password 'your-password' --port 1080
 EOF
 }
 
 require_root() {
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-    die "请使用 root 运行，例如: sudo bash $SCRIPT_NAME --user socksuser --password 'your-password'"
+    die "请使用 root 运行，例如: sudo bash $SCRIPT_NAME --password 'your-password'"
   fi
 }
 
@@ -82,7 +83,6 @@ parse_args() {
 }
 
 validate_args() {
-  [[ -n "$SOCKS_USER" ]] || die "必须指定 --user"
   [[ -n "$SOCKS_PASSWORD" ]] || die "必须指定 --password"
   [[ "$PORT" =~ ^[0-9]+$ ]] || die "端口必须是数字: $PORT"
   (( PORT >= 1 && PORT <= 65535 )) || die "端口范围必须在 1-65535 之间: $PORT"

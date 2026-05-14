@@ -12,7 +12,6 @@ Shadowsocks 安装脚本。
 curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/shadowsocks.sh -o shadowsocks.sh && chmod +x shadowsocks.sh && ./shadowsocks.sh
 ```
 
-
 ## bbr
 
 ```bash
@@ -21,16 +20,22 @@ curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/bbr.
 
 ## dante-server
 
-Debian SOCKS5 服务端安装脚本，基于 `dante-server`，监听 `0.0.0.0:1080`，允许任意客户端来源连接，并使用用户名/密码认证。
+Debian SOCKS5 服务端安装脚本，基于 `dante-server`，监听 `0.0.0.0:1080`，允许任意客户端来源连接，并使用用户名/密码认证。默认用户名为 `socksuser`。
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/dante-server.sh -o dante-server.sh && chmod +x dante-server.sh && sudo ./dante-server.sh --user socksuser --password 'your-password'
+curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/dante-server.sh | sudo bash -s -- --password 'your-password'
 ```
 
 自定义端口：
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/dante-server.sh -o dante-server.sh && chmod +x dante-server.sh && sudo ./dante-server.sh --user socksuser --password 'your-password' --port 1080
+curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/dante-server.sh | sudo bash -s -- --password 'your-password' --port 1080
+```
+
+自定义用户名：
+
+```bash
+curl -sSL https://raw.githubusercontent.com/zhnkc9/shells/refs/heads/master/dante-server.sh | sudo bash -s -- --user socksuser --password 'your-password'
 ```
 
 客户端测试：
