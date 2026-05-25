@@ -3,14 +3,18 @@
 set -Eeuo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
-CONFIG_PATH="/etc/danted.conf"
+SERVICE_NAME="microsocks"
+ENV_FILE="/etc/default/microsocks"
+SERVICE_FILE="/etc/systemd/system/microsocks.service"
 DEFAULT_PORT="1080"
 DEFAULT_USER="socksuser"
+DEFAULT_LISTEN="0.0.0.0"
 
 SOCKS_USER="$DEFAULT_USER"
 SOCKS_PASSWORD=""
 PORT="$DEFAULT_PORT"
-EXTERNAL_IFACE=""
+LISTEN_ADDR="$DEFAULT_LISTEN"
+MICROSOCKS_BIN=""
 
 log() {
   printf '[INFO] %s\n' "$*"
@@ -33,12 +37,12 @@ Options:
   --user <username>       SOCKS5 认证用户名，默认: $DEFAULT_USER
   --password <password>   SOCKS5 认证密码，必填
   --port <port>           SOCKS5 监听端口，默认: $DEFAULT_PORT
-  --external <iface>      出口网卡；默认自动检测
+  --listen <ip>           监听地址，默认: $DEFAULT_LISTEN
   -h, --help              显示帮助
 
 示例:
   sudo bash $SCRIPT_NAME --password 'your-password'
-  sudo bash $SCRIPT_NAME --user socksuser --password 'your-password' --port 1080
+  sudo bash $SCRIPT_NAME --user socksuser --password 'your-password' --port 2080
 EOF
 }
 
@@ -66,9 +70,9 @@ parse_args() {
         PORT="$2"
         shift 2
         ;;
-      --external)
-        [[ $# -ge 2 ]] || die "--external 需要一个参数"
-        EXTERNAL_IFACE="$2"
+      --listen)
+        [[ $# -ge 2 ]] || die "--listen 需要一个参数"
+        LISTEN_ADDR="$2"
         shift 2
         ;;
       -h|--help)
@@ -87,8 +91,16 @@ validate_args() {
   [[ "$PORT" =~ ^[0-9]+$ ]] || die "端口必须是数字: $PORT"
   (( PORT >= 1 && PORT <= 65535 )) || die "端口范围必须在 1-65535 之间: $PORT"
 
-  if [[ ! "$SOCKS_USER" =~ ^[a-z_][a-z0-9_-]*[$]?$ ]]; then
-    die "用户名格式不合法: $SOCKS_USER"
+  if [[ ! "$SOCKS_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    die "用户名只允许字母、数字、点、下划线和短横线: $SOCKS_USER"
+  fi
+
+  if [[ ! "$SOCKS_PASSWORD" =~ ^[A-Za-z0-9._@+=-]+$ ]]; then
+    die "密码只允许字母、数字、点、下划线、@、+、= 和短横线"
+  fi
+
+  if [[ ! "$LISTEN_ADDR" =~ ^[0-9A-Fa-f:.]+$ ]]; then
+    die "监听地址格式不合法: $LISTEN_ADDR"
   fi
 }
 
@@ -102,66 +114,57 @@ check_platform() {
   fi
 }
 
-install_dante() {
+install_microsocks() {
   command -v apt-get >/dev/null 2>&1 || die "未找到 apt-get，当前系统不受支持"
+  command -v systemctl >/dev/null 2>&1 || die "未找到 systemctl，当前系统不受支持"
 
   log "更新 apt 索引"
   apt-get update -y
 
-  log "安装 dante-server"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y dante-server curl
+  log "安装 microsocks"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y microsocks curl
+
+  MICROSOCKS_BIN="$(command -v microsocks || true)"
+  [[ -n "$MICROSOCKS_BIN" ]] || die "microsocks 安装后仍未找到可执行文件"
 }
 
-detect_external_iface() {
-  if [[ -n "$EXTERNAL_IFACE" ]]; then
-    return 0
-  fi
-
-  EXTERNAL_IFACE="$(ip route get 8.8.8.8 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "dev") {print $(i+1); exit}}')"
-  [[ -n "$EXTERNAL_IFACE" ]] || die "自动检测出口网卡失败，请使用 --external 指定"
-  log "检测到出口网卡: $EXTERNAL_IFACE"
+write_environment() {
+  cat > "$ENV_FILE" <<EOF
+MICROSOCKS_LISTEN=$LISTEN_ADDR
+MICROSOCKS_PORT=$PORT
+MICROSOCKS_USER=$SOCKS_USER
+MICROSOCKS_PASSWORD=$SOCKS_PASSWORD
+EOF
+  chmod 600 "$ENV_FILE"
+  log "microsocks 参数已写入: $ENV_FILE"
 }
 
-ensure_socks_user() {
-  if id "$SOCKS_USER" >/dev/null 2>&1; then
-    log "用户 $SOCKS_USER 已存在，更新密码"
-  else
-    log "创建 SOCKS 用户: $SOCKS_USER"
-    useradd -r -s /usr/sbin/nologin "$SOCKS_USER"
-  fi
+write_service() {
+  cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=MicroSocks SOCKS5 proxy
+After=network-online.target
+Wants=network-online.target
 
-  printf '%s:%s\n' "$SOCKS_USER" "$SOCKS_PASSWORD" | chpasswd
-}
+[Service]
+Type=simple
+EnvironmentFile=$ENV_FILE
+ExecStart=$MICROSOCKS_BIN -i \${MICROSOCKS_LISTEN} -p \${MICROSOCKS_PORT} -u \${MICROSOCKS_USER} -P \${MICROSOCKS_PASSWORD}
+Restart=always
+RestartSec=3
+DynamicUser=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
 
-write_config() {
-  if [[ -f "$CONFIG_PATH" ]]; then
-    cp "$CONFIG_PATH" "$CONFIG_PATH.bak.$(date +%Y%m%d%H%M%S)"
-  fi
-
-  cat > "$CONFIG_PATH" <<EOF
-logoutput: syslog
-
-internal: 0.0.0.0 port = $PORT
-external: $EXTERNAL_IFACE
-
-socksmethod: username
-clientmethod: none
-user.privileged: root
-user.unprivileged: nobody
-
-client pass {
-    from: 0.0.0.0/0 to: 0.0.0.0/0
-    log: connect disconnect error
-}
-
-socks pass {
-    from: 0.0.0.0/0 to: 0.0.0.0/0
-    command: connect bind udpassociate
-    log: connect disconnect error
-}
+[Install]
+WantedBy=multi-user.target
 EOF
 
-  log "Dante 配置已写入: $CONFIG_PATH"
+  log "systemd 服务已写入: $SERVICE_FILE"
 }
 
 open_ufw_port_if_active() {
@@ -172,9 +175,10 @@ open_ufw_port_if_active() {
 }
 
 restart_service() {
-  systemctl enable danted >/dev/null
-  systemctl restart danted
-  systemctl --no-pager --full status danted || true
+  systemctl daemon-reload
+  systemctl enable "$SERVICE_NAME" >/dev/null
+  systemctl restart "$SERVICE_NAME"
+  systemctl --no-pager --full status "$SERVICE_NAME" || true
 }
 
 show_result() {
@@ -183,6 +187,7 @@ show_result() {
 
   echo
   log "SOCKS5 服务已配置完成"
+  printf '服务: microsocks\n'
   printf '地址: %s\n' "$public_ip"
   printf '端口: %s\n' "$PORT"
   printf '用户名: %s\n' "$SOCKS_USER"
@@ -197,10 +202,9 @@ main() {
   validate_args
   require_root
   check_platform
-  install_dante
-  detect_external_iface
-  ensure_socks_user
-  write_config
+  install_microsocks
+  write_environment
+  write_service
   open_ufw_port_if_active
   restart_service
   show_result
